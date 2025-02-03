@@ -51,7 +51,6 @@ class Rede:
         distancias[dispositivo_inicial] = 0
         anteriores = {d: None for d in self.dispositivos}
 
-        import heapq
         counter = 0
         fila = [(0, counter, dispositivo_inicial)]
 
