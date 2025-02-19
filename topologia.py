@@ -1,37 +1,30 @@
 import heapq
 import networkx as nx
 import matplotlib.pyplot as plt
-import ipaddress
 import time
+from ipaddress import ip_interface
 
 class Dispositivo:
-    def __init__(self, nome, ip, tipo, gateway=None, subnet=None):
+    def __init__(self, nome, ip, tipo):
         """
         :param nome: Nome do dispositivo (ex: 'h1', 'r1', 's1').
         :param ip: Endereço IP com máscara (ex: '172.16.1.1/24').
         :param tipo: Tipo do dispositivo ('host', 'roteador', 'comutador').
         """
         self.nome = nome
-        self.ip = ip.split('/')[0]  # Remove a máscara
-        self.subnet = subnet or self.calcular_subnet(ip)
+        self.ip = ip # Com máscara e tudo
+        self.subnet = str(ip_interface(ip).network)
         self.tipo = tipo
-        self.gateway = gateway
         self.vizinhos = {}  # {Dispositivo: (custo, enlace, capacidade, justificativa)}
         self.tabela_roteamento = {} if self.tipo == 'roteador' else None
-
-    def calcular_subnet(self, ip):
-        """Calcula a sub-rede a partir do IP com máscara."""
-        try:
-            rede = ipaddress.ip_network(ip, strict=False)
-            return str(rede)
-        except ValueError:
-            return None
     
     def adicionar_vizinho(self, vizinho, custo=1, enlace='fibra', capacidade='1Gbps', justificativa='Backbone'):
         self.vizinhos[vizinho] = (custo, enlace, capacidade, justificativa)
     
     def __str__(self):
         return f"{self.tipo.capitalize()} {self.nome} (IP: {self.ip}, Subnet: {self.subnet})"
+    
+
 
 class Rede:
     def __init__(self):
@@ -74,14 +67,14 @@ class Rede:
         if not origem or not destino:
             return 'Dispositivo de origem ou destino não encontrado.'
         
-        inicio = time.time()
         anteriores = self.bfs(origem)
-        fim = time.time()
         
         if anteriores[destino] is None:
             return 'Destino inalcançável!'
         else:
-            tempo_resposta = (fim - inicio) * 1000
+            # O tempo resposta deve ser a quantidade de saltos * 10ms
+            
+            tempo_resposta = anteriores[destino] * 10
             return f'Ping de {ip_origem} para {ip_destino} realizado com sucesso! Tempo: {tempo_resposta:.2f}ms'
 
     def traceroute(self, ip_origem, ip_destino):
@@ -142,7 +135,7 @@ class Rede:
         
         # Desenha nós
         for i, (node, shape) in enumerate(zip(G.nodes(), formas)):
-            nx.draw_networkx_nodes(G, pos, nodelist=[node], node_shape=shape, node_color=cores[i], node_size=500)
+            nx.draw_networkx_nodes(G, pos, nodelist=[node], node_shape=shape, node_color=cores[i], node_size=2000)
         
         # Desenha arestas
         cores_enlace = {
@@ -161,11 +154,11 @@ class Rede:
                 width=2.0
             )
         
-        nx.draw_networkx_edges(G, pos, width=1.5, edge_color='gray')
+        nx.draw_networkx_edges(G, pos, width=2, edge_color='gray')
         
         # Desenha rótulos
         labels = {node: f"{node}\nIP: {data['ip']}\nSubnet: {data['subnet']}" for node, data in G.nodes(data=True)}
-        nx.draw_networkx_labels(G, pos, labels, font_size=4, font_color='black')
+        nx.draw_networkx_labels(G, pos, labels, font_size=5, font_color='black')
         
         # Desenha pesos das arestas
         edge_labels = {}
@@ -199,16 +192,25 @@ class Rede:
         for dispositivo in self.dispositivos:
             if dispositivo.tipo == 'roteador':
                 anteriores = self.bfs(dispositivo)
+                dispositivo.tabela_roteamento = {}  # Reset the routing table
+                
+                # Build routing table with device names and subnets
                 for dest in self.dispositivos:
                     if dest.subnet and dest != dispositivo:
                         passo_atual = dest
                         while anteriores[passo_atual] != dispositivo and anteriores[passo_atual] is not None:
                             passo_atual = anteriores[passo_atual]
                         if anteriores[passo_atual] == dispositivo:
-                            dispositivo.tabela_roteamento[dest.subnet] = passo_atual.ip
+                            # Store both next hop device name and IP
+                            dispositivo.tabela_roteamento[dest.subnet] = {
+                                'destino': dest.nome,
+                                'proximo': passo_atual.nome,
+                                'ip_proximo': passo_atual.ip
+                            }
                 
+                # Print the routing table
                 print(f"\n=== Tabela de Roteamento - {dispositivo.nome} ({dispositivo.ip}) ===")
                 print("Destino (Subnet)        | Próximo Salto")
                 print("----------------------------------------")
-                for subnet, next_hop in dispositivo.tabela_roteamento.items():
-                    print(f"{subnet:22} | {next_hop}")
+                for subnet, info in dispositivo.tabela_roteamento.items():
+                    print(f"{info['destino']} ({subnet:18}) | {info['proximo']} ({info['ip_proximo']})")
