@@ -2,7 +2,7 @@ import heapq
 import networkx as nx
 import matplotlib.pyplot as plt
 import time
-from ipaddress import ip_interface
+from ipaddress import ip_network, ip_interface
 
 class Dispositivo:
     def __init__(self, nome, ip, tipo):
@@ -23,8 +23,6 @@ class Dispositivo:
     
     def __str__(self):
         return f"{self.tipo.capitalize()} {self.nome} (IP: {self.ip}, Subnet: {self.subnet})"
-    
-
 
 class Rede:
     def __init__(self):
@@ -33,7 +31,47 @@ class Rede:
 
     def adicionar_dispositivo(self, dispositivo):
         self.dispositivos.append(dispositivo)
-    
+
+    def adicionar_host(self, nome, ip_str):
+        # Valida o IP do host
+        try:
+            ip_iface = ip_interface(ip_str)
+        except ValueError:
+            print("IP inválido! Tente novamente.")
+            return
+        # Verifica se o ip já existe
+        for dispositivo in self.dispositivos:
+            if dispositivo.ip == ip_str:
+                print("IP já existe! O host não foi adicionado.")
+                return
+        
+        subrede_host = ip_network(ip_iface.network, strict=False)    
+        # Verifica se essa subrede existe
+        subrede_encontrada = None
+        for dispositivo in self.dispositivos:
+            try:
+                subrede_dispositivo = ip_network(ip_interface(dispositivo.ip).network, strict=False)
+                if subrede_dispositivo == subrede_host:
+                    subrede_encontrada = dispositivo
+                    break
+            except ValueError:
+                continue
+        if subrede_encontrada is None:
+            print("Subrede não encontrada! O host não foi adicionado.")
+            return
+        
+        # Conta quantos hosts já existem na subred
+        hosts_totais = sum(1 for dispositivo in self.dispositivos if dispositivo.tipo == "host" and ip_network(ip_interface(dispositivo.ip).network, strict=False) == subrede_host)
+        max_hosts = 2 ** (32  - subrede_host.prefixlen) - 2
+        if hosts_totais >= max_hosts:
+            print(f"Subrede cheia! Número máximo de hosts ({max_hosts}) já atingido.")
+            return
+        
+        host = Dispositivo(nome, ip_str, 'host')
+        self.adicionar_dispositivo(host)
+        self.adicionar_link(host, subrede_encontrada, enlace='par trançado', capacidade='200Mbps', justificativa='Conexão de borda')
+        print(f"Host {nome} adicionado com sucesso!")
+
     def adicionar_link(self, dispositivo1, dispositivo2, custo=1, enlace='fibra', capacidade='1Gbps', justificativa='Backbone'):
         dispositivo1.adicionar_vizinho(dispositivo2, custo, enlace, capacidade, justificativa)
         dispositivo2.adicionar_vizinho(dispositivo1, custo, enlace, capacidade, justificativa)
@@ -72,9 +110,13 @@ class Rede:
         if anteriores[destino] is None:
             return 'Destino inalcançável!'
         else:
-            # O tempo resposta deve ser a quantidade de saltos * 10ms
+            saltos = 0
+            passo_atual = destino
+            while anteriores[passo_atual] is not None:
+                passo_atual = anteriores[passo_atual]
+                saltos += 1
             
-            tempo_resposta = anteriores[destino] * 10
+            tempo_resposta = saltos * 10
             return f'Ping de {ip_origem} para {ip_destino} realizado com sucesso! Tempo: {tempo_resposta:.2f}ms'
 
     def traceroute(self, ip_origem, ip_destino):
@@ -131,11 +173,11 @@ class Rede:
         
         # Desenha o grafo
         pos = nx.spring_layout(G)
-        plt.figure(figsize=(14, 10))
+        plt.figure(figsize=(12, 10))
         
         # Desenha nós
         for i, (node, shape) in enumerate(zip(G.nodes(), formas)):
-            nx.draw_networkx_nodes(G, pos, nodelist=[node], node_shape=shape, node_color=cores[i], node_size=2000)
+            nx.draw_networkx_nodes(G, pos, nodelist=[node], node_shape=shape, node_color=cores[i], node_size=3000)
         
         # Desenha arestas
         cores_enlace = {
@@ -158,7 +200,7 @@ class Rede:
         
         # Desenha rótulos
         labels = {node: f"{node}\nIP: {data['ip']}\nSubnet: {data['subnet']}" for node, data in G.nodes(data=True)}
-        nx.draw_networkx_labels(G, pos, labels, font_size=5, font_color='black')
+        nx.draw_networkx_labels(G, pos, labels, font_size=10, font_color='black')
         
         # Desenha pesos das arestas
         edge_labels = {}
@@ -168,7 +210,7 @@ class Rede:
             justificativa = edge[2]['justificativa']
             edge_labels[(edge[0], edge[1])] = f"{tipo}\n{capacidade}\n({justificativa})"
     
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=6, font_color='darkred')
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=10, font_color='darkred')
         
         # Legenda
         legend_labels = {

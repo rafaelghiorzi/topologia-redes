@@ -9,51 +9,6 @@ def listar_dispositivos(rede):
         tipo = dispositivo.tipo.capitalize()
         print(f"{i}: {dispositivo.nome} ({tipo}) - IP: {dispositivo.ip}, Subnet: {dispositivo.subnet}")
 
-# A função adicionar host vai ser chamado para adicionar hosts à rede apenas se exisitir a subnet correspondente
-def adicionar_host(rede):
-    """Adiciona um host à rede via CLI."""
-    nome = input("Nome do host (ex: h1): ").strip()
-    ip_str = input("IP do host com máscara (ex: 172.16.1.1/24): ").strip()
-    
-    # Valida o IP do host
-    try:
-        ip_iface = ip_interface(ip_str)
-    except ValueError:
-        print("IP inválido! Tente novamente.")
-        return
-    # Verifica se o ip já existe
-    for dispositivo in rede.dispositivos:
-        if dispositivo.ip == ip_str:
-            print("IP já existe! O host não foi adicionado.")
-            return
-    
-    subrede_host = ip_network(ip_iface.network, strict=False)    
-    # Verifica se essa subrede existe
-    subrede_encontrada = None
-    for dispositivo in rede.dispositivos:
-        try:
-            subrede_dispositivo = ip_network(ip_interface(dispositivo.ip).network, strict=False)
-            if subrede_dispositivo == subrede_host:
-                subrede_encontrada = dispositivo
-                break
-        except ValueError:
-            continue
-    if subrede_encontrada is None:
-        print("Subrede não encontrada! O host não foi adicionado.")
-        return
-    
-    # Conta quantos hosts já existem na subred
-    hosts_totais = sum(1 for dispositivo in rede.dispositivos if dispositivo.tipo == "host" and ip_network(ip_interface(dispositivo.ip).network, strict=False) == subrede_host)
-    max_hosts = 2 ** (32  - subrede_host.prefixlen) - 2
-    if hosts_totais >= max_hosts:
-        print(f"Subrede cheia! Número máximo de hosts ({max_hosts}) já atingido.")
-        return
-    
-    host = Dispositivo(nome, ip_str, 'host')
-    rede.adicionar_dispositivo(host)
-    rede.adicionar_link(host, subrede_encontrada, enlace='par trançado', capacidade='200Mbps', justificativa='Conexão de borda')
-    print(f"Host {nome} adicionado com sucesso!")
-
 # Executar ping funciona normalmente
 def executar_ping(rede):
     """Executa o comando ping entre dois IPs."""
@@ -68,6 +23,7 @@ def executar_traceroute(rede):
     ip_destino = input("IP de destino (ex: 172.16.2.33): ").strip()
     print(rede.traceroute(ip_origem, ip_destino))
 
+# Menu do CLI
 def menu():
     """Exibe o menu principal."""
     print("\n=== Menu ===")
@@ -82,6 +38,7 @@ def menu():
 def main():
     rede = Rede()
     
+    # 2^n - 2 >= hosts
     # Dispositivos iniciais
     c1 = Dispositivo('c1', '172.16.0.1/30', 'roteador')
     # /30 para aguentar no mínimo 4 subredes
@@ -109,6 +66,22 @@ def main():
     rede.adicionar_link(a2, e3, enlace='fibra', capacidade='1Gbps', justificativa='Conexão de agregação')
     rede.adicionar_link(a2, e4, enlace='fibra', capacidade='1Gbps', justificativa='Conexão de agregação')
     
+    """b) As subredes e1 e e2 devem ter capacidade para endereçar ao menos 24 hosts em cada uma.
+    c) As subredes e3 e e4 devem ter capacidade para endereçar ao menos 15 hosts em cada uma"""
+
+    # Adicionando 24 hosts em e1 e e2
+    for i in range(2, 8):
+        rede.adicionar_host(f'Host e1 {i}', f'172.16.1.{i}/27')
+        
+    for i in range(34, 41):
+        rede.adicionar_host(f'Host e4 {i}', f'172.16.2.{i}/27')
+        
+    for i in range(2, 10):
+        rede.adicionar_host(f'Host e3 {i}', f'172.16.2.{i}/27')    
+        
+    for i in range(34, 44):
+        rede.adicionar_host(f'Host e2 {i}', f'172.16.1.{i}/27')
+        
     
     # Constrói tabelas de roteamento
     rede.mostrar_tabelas_roteamento()
@@ -118,7 +91,9 @@ def main():
         escolha = input("Escolha uma opção: ").strip()
         
         if escolha == '1':
-            adicionar_host(rede)
+            nome = input("Nome do host (ex: h1): ").strip()
+            ip_str = input("IP do host com máscara (ex: 172.16.1.1/24): ").strip()
+            rede.adicionar_host(nome, ip_str)
         elif escolha == '2':
             executar_ping(rede)
         elif escolha == '3':
